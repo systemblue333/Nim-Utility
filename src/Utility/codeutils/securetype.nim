@@ -1,15 +1,13 @@
 import posix
+import autoopt
 
 # declaring secured type
 type
   SecureSeq*[T] = object
-    data: ptr UncheckedArray[T]
-    length: int
-    capacity: int
-  SecureString* = object
-    data: ptr UncheckedArray[char]
-    length: int
-    capacity: int
+    data*: ptr UncheckedArray[T]
+    length*: int
+    capacity*: int
+  SecureString* = SecureSeq[char]
   SecureArray*[N: static[int], T] = distinct array[N, T]
 
 # general zerofill for pointer
@@ -38,7 +36,7 @@ proc zerofill*(str: var string, u: int): void {.inline.} =
   for i in 0 ..< u:
     # loop for size
     for j in 0 ..< str.len:
-      str[j] = 'z'
+      str[j] = 0xFF.char
 
   # get address
   var address: ptr char = addr str[0]
@@ -47,22 +45,6 @@ proc zerofill*(str: var string, u: int): void {.inline.} =
   {.emit: """asm volatile ("" : : "g"(`address`) : "memory");""".}
 
   return
-
-# SecureString destory
-proc `=destroy`*(s: var SecureString): void =
-  # check nil
-  if s.data != nil:
-    # zerofill
-    zerofill(s.data, 1, s.capacity)
-
-    # unlock memory
-    discard posix.munlock(s.data, s.capacity)
-
-    # dealloc memory
-    deallocShared(s.data)
-
-    # set memory to nil
-    s.data = nil
 
 # SecureSeq destory
 proc `=destroy`*[T](s: var SecureSeq[T]): void {.inline.} =
@@ -84,23 +66,8 @@ proc `=destroy`*[T](s: var SecureSeq[T]): void {.inline.} =
 proc `=destroy`*[N: static[int], T](s: var SecureArray[N, T]): void {.inline.} =
   zerofill(addr s, 1, sizeof(s))
 
-# allocate new SecureString wtih length
-template newSecureString*(cap: Natural): SecureString =
-  var output: SecureString
-  let size = if cap == 0: 16 else: cap
-  # allocating memory
-  output.data = cast[ptr UncheckedArray[char]](allocShared0(size))
-  # lock memory
-  discard posix.mlock(output.data, size)
-  # initialize length and capacity
-  output.length = 0
-  output.capacity = size
-
-  # returning
-  output
-
 # allocate new SecureString with capacity
-template newSecureSeq*[T](cap: Natural): SecureSeq[T] =
+template newSecureSeq*[T](cap: Natural): SecureSeq[T] {.autoSizeOpt.} =
   var output: SecureSeq[T]
   # allocating memory
   output.data = cast[ptr UncheckedArray[T]](allocShared0(cap * sizeof(T)))
@@ -112,15 +79,23 @@ template newSecureSeq*[T](cap: Natural): SecureSeq[T] =
 
   # returning
   output
+  
+
+# allocate new SecureString wtih length
+template newSecureString*(cap: Natural): SecureString {.autoSizeOpt.} =
+  var output: SecureString = newSecureSeq[char](cap)
+  output
 
 # initialize SecureSeq by seq
-proc toSecureSeq*[T](input: seq[T]): SecureSeq[T] =
+proc toSecureSeq*[T](input: openArray[T]): SecureSeq[T] =
   # allocate memory
   result = newSecureSeq[T](input.len * 2)
   # initialize SecureSeq by input
   if input.len > 0:
     copyMem(result.data, addr input[0], input.len * sizeof(T))
     result.length = input.len
+
+  return result
 
 # initialize SecureString by string
 proc toSecureString*(input: string): SecureString =
@@ -131,134 +106,14 @@ proc toSecureString*(input: string): SecureString =
     copyMem(result.data, addr input[0], input.len)
     result.length = input.len
 
+  return result
+
 # --- SecureString Utils ---
-
-# slicing for SecureString
-template `[]`*(s: SecureString, slice: HSlice[int, int]): openArray[char] =
-  let a: int = slice.a
-  let b: int = slice.b
-
-  assert a >= 0 and b < s.len, "out of bounds"
-
-  toOpenArray(s.data, a, b)
-
-# backwards slicing for SecureString
-template `[]`*[T](s: SecureString, slice: HSlice[int, BackwardsIndex]): openArray[char] =
-  let a: int = slice.a
-  let b: int = s.len - slice.b.int
-  assert a >= 0 and b < s.len, "Out of bounds"
-  toOpenArray(s.data, a, b)
-
-# double backwards slicing for SecureString
-template `[]`*[T](s: SecureString, slice: HSlice[BackwardsIndex, BackwardsIndex]): openArray[char] =
-  let a: int = s.len - slice.a.int
-  let b: int = s.len - slice.b.int
-  assert a >= 0 and b < s.len, "Out of bounds"
-  toOpenArray(s.data, a, b)
-
-# read indexing for SecureString
-template `[]`*(input: SecureString, i: int): char =
-  input.data[i]
-
-# write indexing for SecureString
-template `[]=`*(output: var SecureString, i: int, input: char) =
-  output.data[i] = input
-
-# backwards indexing for SecureString
-template `[]`*(s: SecureString, i: BackwardsIndex): char =
-  s.data[s.len - i.int]
-
-# backwards write indexing SecureString
-template `[]=`*(s: var SecureString, i: BackwardsIndex, value: char) =
-  s.data[s.len - i.int] = value
-
-# get length for SecureString
-template len*(s: SecureString): int =
-  s.length
-
-# print SecureString
-template `$`*(s: SecureString): string =
-  var output: string = newString(s.length)
-  if s.len > 0:
-    copyMem(addr result[0], s.data, s.length)
-
-# items for SecureString
-iterator items*(s: SecureString): char =
-  for i in 0 ..< s.length:
-    yield s.data[i]
-
-# mutable items for SecureString
-iterator mitems*(s: var SecureString): var char =
-  for i in 0 ..< s.length:
-    yield s.data[i]
-
-# add char to SecureString
-proc add*(output: var SecureString, input: char) {.inline.} =
-  # check length + 1 is bigger then capacity
-  if output.length + 1 > output.capacity:
-    # set new capacity
-    let newCap = if output.capacity == 0: 16 else: output.capacity * 2
-    # allocate new memory
-    let newData = cast[ptr UncheckedArray[char]](allocShared0(newCap))
-    # lock new memory
-    discard posix.mlock(newData, newCap)
-
-    # check output's data is nil
-    if output.data != nil:
-      # copy memory
-      if output.len > 0: copyMem(newData, output.data, output.length)
-      # zerofill output's data
-      zerofill(output.data, 1, output.capacity)
-      # unlock memory(data)
-      discard posix.munlock(output.data, output.capacity)
-      # deallocate memory(data)
-      deallocShared(output.data)
-
-    # initialize output
-    output.data = newData
-    output.capacity = newCap
-
-  # add input
-  output.data[output.length] = input
-  # increase output's length
-  inc output.length
-
-# add openArray[char] to SecureString
-proc add*(output: var SecureString, input: openArray[char]) {.inline.} =
-  # set needed length
-  let needed = output.length + input.len
-  if needed > output.capacity:
-    # set capacity
-    let newCap = if output.capacity == 0: 16 else: output.capacity * 2
-    # allocate new memory
-    let newData = cast[ptr UncheckedArray[char]](allocShared0(newCap))
-    # lock new memory
-    discard posix.mlock(newData, newCap)
-
-    # check nil
-    if output.data != nil:
-      # copy memory
-      if output.length > 0: copyMem(newData, output.data, output.length)
-      # zeorfill output's data
-      zerofill(output.data, 1, output.capacity)
-      # unlock memory(data)
-      discard posix.munlock(output.data, output.capacity)
-      # deallocate memory(data)
-      deallocShared(output.data)
-
-    # initialize output
-    output.data = newData
-    output.capacity = newCap
-
-  # copy memory
-  if input.len > 0:
-    copyMem(addr output.data[output.length], addr input[0], input.len)
-    output.length = needed
 
 # --- SecureSeq Utils ---
 
 # slicing for SecureSeq
-template `[]`*[T](s: SecureSeq[T], slice: HSlice[int, int]): openArray[T] =
+template `[]`*[T](s: SecureSeq[T], slice: HSlice[int, int]): openArray[T] {.autoSizeOpt.} =
   let a: int = slice.a
   let b: int = slice.b
 
@@ -267,39 +122,39 @@ template `[]`*[T](s: SecureSeq[T], slice: HSlice[int, int]): openArray[T] =
   toOpenArray(s.data, a, b)
 
 # backwards slicing for SecureSeq
-template `[]`*[T](s: SecureSeq[T], slice: HSlice[int, BackwardsIndex]): openArray[T] =
+template `[]`*[T](s: SecureSeq[T], slice: HSlice[int, BackwardsIndex]): openArray[T] {.autoSizeOpt.} =
   let a: int = slice.a
   let b: int = s.len - slice.b.int
   assert a >= 0 and b < s.len, "Out of bounds"
   toOpenArray(s.data, a, b)
 
 # double backwards slicing for SecureSeq
-template `[]`*[T](s: SecureSeq[T], slice: HSlice[BackwardsIndex, BackwardsIndex]): openArray[T] =
+template `[]`*[T](s: SecureSeq[T], slice: HSlice[BackwardsIndex, BackwardsIndex]): openArray[T] {.autoSizeOpt.} =
   let a: int = s.len - slice.a.int
   let b: int = s.len - slice.b.int
   assert a >= 0 and b < s.len, "Out of bounds"
   toOpenArray(s.data, a, b)
 
 # read indexing for SecureSeq
-template `[]`*[T](s: SecureSeq[T], i: int): T =
+template `[]`*[T](s: SecureSeq[T], i: int): T {.autoSizeOpt.} =
   assert i >= 0 and i < s.len, "Out of bounds"
   s.data[i]
 
 # get length for SecureSeq
-template `len`*[T](s: SecureSeq[T]): int =
+template `len`*[T](s: SecureSeq[T]): int {.autoSizeOpt.} =
   s.length
 
 # write indexing for SecureSeq
-template `[]=`*[T](s: var SecureSeq[T], i: int, value: T) =
+template `[]=`*[T](s: var SecureSeq[T], i: int, value: T) {.autoSizeOpt.} =
   assert i >= 0 and i < s.len, "Out of bounds"
   s.data[i] = value
 
 # backwards indexing for SecureSeq
-template `[]`*[T](s: SecureSeq[T], i: BackwardsIndex): T =
+template `[]`*[T](s: SecureSeq[T], i: BackwardsIndex): T {.autoSizeOpt.} =
   s.data[s.len - i.int]
 
 # backwards write indexing for SecureSeq
-template `[]=`*[T](s: var SecureSeq[T], i: BackwardsIndex, value: T) =
+template `[]=`*[T](s: var SecureSeq[T], i: BackwardsIndex, value: T) {.autoSizeOpt.} =
   s.data[s.len - i.int] = value
 
 # items for SecureSeq
@@ -312,15 +167,37 @@ iterator mitems*[T](s: var SecureSeq[T]): var T =
   for i in 0 ..< s.len:
     yield s.data[i]
 
+# SecureSeq items
+iterator items*[T](args: varargs[SecureSeq[T]]): SecureSeq[T] =
+  for i in 0 ..< args.len:
+    yield args[i]
+
+# SecureSeq addr
+template addr*[T](s: SecureSeq[T], i: int): ptr T =
+  assert i >= 0 and i < s.length, "Out of bounds"
+  addr(s.data[i])
+
+# SeucreSeq addr for backwords index
+template addr*[T](s: SecureSeq[T], i: BackwardsIndex): ptr T =
+  addr(s.data[s.len - i.int])
+
+template contains*[T](s: SecureSeq[T], item: T): bool =
+  var res = false
+  for i in 0 ..< s.len:
+    if s.data[i] == item:
+      res = true
+      break
+  res
+
 # secure resize logic
-template secureResize[T](output: var SecureSeq[T], newRequiredCap: int) =
+template secureResize[T](output: var SecureSeq[T], newRequiredCap: int) {.autoSizeOpt.} =
   # set new capacity
   let newCap = newRequiredCap * 2
   # allocate new data
   let newData = cast[ptr UncheckedArray[T]](allocShared0(newCap * sizeof(T)))
 
   # check nil and length
-  if s.data != nil and output.length > 0:
+  if output.data != nil and output.length > 0:
     # copy memory
     copyMem(newData, output.data, output.length * sizeof(T))
     # zerofill memory
@@ -352,21 +229,80 @@ proc add*[T](output: var SecureSeq[T], input: openArray[T]) {.inline.} =
     copyMem(addr output.data[output.length], addr input[0], input.len * sizeof(T))
     output.length = needed
 
+# set length for SecureSeq
+proc setLen*[T](s: var SecureSeq[T], newLen: Natural) {.inline.} =
+  if newLen > s.capacity:
+    s.secureResize(newLen)
+  
+  if newLen < s.length:
+    # Optional: zero out the removed part for security?
+    # Since it's a SecureSeq, we should probably zero it out immediately.
+    let diff = s.length - newLen
+    zerofill(addr s.data[newLen], 1, diff * sizeof(T))
+  
+  s.length = newLen
+
+template `==`*[T](a, b: SecureSeq[T]): bool =
+  if a.len != b.len: false
+  elif a.len == 0: true
+  else:
+    var res = true
+    for i in 0 ..< a.len:
+      if not (a.data[i] == b.data[i]):
+        res = false
+        break
+    res
+
+template `<`*[T](a, b: SecureSeq[T]): bool =
+  let minLen = min(a.len, b.len)
+  var res = 0
+  for i in 0 ..< minLen:
+    if a.data[i] < b.data[i]:
+      res = -1; break
+    elif b.data[i] < a.data[i]:
+      res = 1; break
+  if res != 0: res < 0 else: a.len < b.len
+
+template `>`*[T](a, b: SecureSeq[T]): bool = 
+  b < a
+
+template `<=`*[T](a, b: SecureSeq[T]): bool = 
+  not (b < a)
+
+template `>=`*[T](a, b: SecureSeq[T]): bool = 
+  not (a < b)
+
 # high for SecureSeq
-template high*[T](x: SecureSeq[T]): int =
+template high*[T](x: SecureSeq[T]): int {.autoSizeOpt.} =
   x.length - 1
 
 # low for SecureSeq
-template low*[T](x: SecureSeq[T]): int =
+template low*[T](x: SecureSeq[T]): int {.autoSizeOpt.} =
   0
 
 # print SecureSeq
-template `$`*[T](input: SecureSeq[T]): string =
+template `$`*[T](input: SecureSeq[T]): string {.autoSizeOpt.} =
   var output: string = "@["
   for i in 0 ..< input.length:
     output.add($input.data[i])
     if i < input.length - 1: output.add(", ")
-  ouptut.add("]")
+  output.add("]")
+
+proc `<`*[T](a, b: SecureSeq[T]): bool =
+  let minLen = min(a.len, b.len)
+  for i in 0 ..< minLen:
+    if a[i] < b[i]: return true
+    if b[i] < a[i]: return false
+  return a.len < b.len
+
+proc `>`*[T](a, b: SecureSeq[T]): bool =
+  return b < a
+
+# print SecureString
+proc `$`*(s: SecureString): string =
+  var output: string = newString(s.length)
+  if s.len > 0:
+    copyMem(addr output[0], s.data, s.length)
 
 # --- SecureArray Utils ---
 
@@ -422,3 +358,7 @@ template high*[N, T](x: SecureArray[N, T]): int =
 # low for SecureArray
 template low*[N, T](x: SecureArray[N, T]): int =
   array[N, T](x).low
+
+template addr*[N, T](s: SecureArray[N, T], i: int): ptr T =
+  assert i >= 0 and i < N, "Out of bounds"
+  addr(cast[array[N, T]](s)[i])
