@@ -41,18 +41,40 @@ template swapEndian*[T: SomeUnsignedInt](input: T, output: var T): void {.autoSi
   else:
     output = input
 
+# swapEndian : array version
 template swapEndian*[T: SomeUnsignedInt, N: static int](input: array[N, T], output: var array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     swapEndian(input[i], output[i])
 
+# swapEndian : openArray version
+template swapEndian*[T: SomeUnsignedInt, N: static int](input: openArray[T], output: var openArray[T]): void {.autoSizeOpt.} =
+  for i in 0 ..< input.len:
+    swapEndian(input[i], output[i])
+
+# swapEndian : openArray and static length version
+template swapEndian*[T: SomeUnsignedInt, N: static int](input: openArray[T], output: var openArray[T], length: static int): void {.autoSizeOpt.} =
+  unroll(i, 0, length - 1):
+    swapEndian(input[i], output[i])
+
+# swapEndian : slicearray version
 template swapEndian*[T: SomeUnsignedInt, N: static int](input, output: slicearray[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     swapEndian(input[i], output[i])
 
+# swapEndian : ptr array version
 template swapEndian*[T: SomeUnsignedInt, N: static int](input: ptr array[N, T], output: ptr array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     swapEndian(input[i], output[i])
 
+# swapEndian : ptr UncheckedArray version
+template swapEndian*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: int): void {.autoSizeOpt.} =
+  for i in 0 ..< length:
+    swapEndian(input[i], output[i]) 
+
+# swapEndian : ptr UncheckedArray and static length version
+template swapEndian*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: static int): void {.autoSizeOpt.} =
+  unroll(i, 0, length - 1):
+    swapEndian(input[i], output[i]) 
 
 # toLE : to little endian generic function
 # use Nim's default littleEndian code 
@@ -86,30 +108,37 @@ template beToNative*[T: BigUint](input: T, output: var T): void {.autoSizeOpt.} 
   else:
     output = input
 
+# beToNative : array version
 template beToNative*[T: BigUint, N: static int](input: array[N, T], output: var array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     beToNative(input[i], output[i]) 
 
+# beToNative : openArray version
 template beToNative*[T: BigUint](input: openArray[T], output: var openArray[T]): void {.autoSizeOpt.} =
   for i in 0 ..< input.len:
     beToNative(input[i], output[i]) 
 
+# beToNative : openArray and static length version
 template beToNative*[T: BigUint](input: openArray[T], output: var openArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     beToNative(input[i], output[i]) 
 
+# beToNative : slicearray version
 template beToNative*[T: BigUint, N: static int](input, output: slicearray[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     beToNative(input[i], output[i]) 
 
+# beToNative : ptr array version
 template beToNative*[T: BigUint, N: static int](input: ptr array[N, T], output: ptr array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     beToNative(input[i], output[i]) 
 
+# beToNative : ptr UncheckedArray version
 template beToNative*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: int): void {.autoSizeOpt.} =
   for i in 0 ..< length:
     beToNative(input[i], output[i]) 
 
+# beToNative : ptr UncheckedArray and static length version
 template beToNative*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     beToNative(input[i], output[i]) 
@@ -122,30 +151,37 @@ template nativeToBE*[T: BigUint](input: T, output: var T): void {.autoSizeOpt.} 
   else:
     output = input
 
+# nativeToBE : array version
 template nativeToBE*[T: BigUint, N: static int](input: array[N, T], output: var array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToBE(input[i], output[i])
 
+# nativeToBE : openArray version
 template nativeToBE*[T: BigUint](input: openArray[T], output: var openArray[T]): void {.autoSizeOpt.} =
   for i in 0 ..< input.len:
     nativeToBE(input[i], output[i])
 
+# nativeToBE : openArray and static length version
 template nativeToBE*[T: BigUint](input: openArray[T], output: var openArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     nativeToBE(input[i], output[i])
 
+# nativeToBE : slicearray version
 template nativeToBE*[T: BigUint, N: static int](input, output: slicearray[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToBE(input[i], output[i])
 
+# nativeToBE : ptr array version
 template nativeToBE*[T: BigUint, N: static int](input: ptr array[N, T], output: ptr array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToBE(input[i], output[i])
 
+# nativeToBE : ptr UncheckedArray version
 template nativeToBE*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: int): void {.autoSizeOpt.} =
   for i in 0 ..< length:
     nativeToBE(input[i], output[i])
 
+# nativeToBE : ptr UnchecekdArray and static length version
 template nativeToBE*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     nativeToBE(input[i], output[i])
@@ -158,30 +194,37 @@ template leToNative*[T: BigUint](input: T, output: var T): void {.autoSizeOpt.} 
   else:
     output = input
 
+# leToNative : array version
 template leToNative*[T: BigUint, N: static int](input: array[N, T], output: var array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     leToNative(input[i], output[i])
 
+# leToNative : openArray version
 template leToNative*[T: BigUint](input: openArray[T], output: var openArray[T]): void {.autoSizeOpt.} =
   for i in 0 ..< input.len:
     leToNative(input[i], output[i])
 
+# leToNative : openArray and static length version
 template leToNative*[T: BigUint](input: openArray[T], output: var openArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     leToNative(input[i], output[i])
 
+# leToNative : slicearray version
 template leToNative*[T: BigUint, N: static int](input, output: slicearray[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     leToNative(input[i], output[i])
 
+# leToNative : ptr array version
 template leToNative*[T: BigUint, N: static int](input: ptr array[N, T], output: ptr array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     leToNative(input[i], output[i])
 
+# leToNative : ptr UnchecekdArray version
 template leToNative*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: int): void {.autoSizeOpt.} =
   for i in 0 ..< length:
     leToNative(input[i], output[i])
 
+# leToNative : ptr UncheckedArray and static length version
 template leToNative*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     leToNative(input[i], output[i])
@@ -194,30 +237,37 @@ template nativeToLE*[T: BigUint](input: T, output: var T): void {.autoSizeOpt.} 
   else:
     output = input
 
+# nativeToLE : array version
 template nativeToLE*[T: BigUint, N: static int](input: array[N, T], output: var array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToLE(input[i], output[i])
 
+# nativeToLE : openArray version
 template nativeToLE*[T: BigUint](input: openArray[T], output: var openArray[T]): void {.autoSizeOpt.} =
   for i in 0 ..< input.len:
     nativeToLE(input[i], output[i])
 
+# nativeToLE : openArray and static length version
 template nativeToLE*[T: BigUint](input: openArray[T], output: var openArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     nativeToLE(input[i], output[i])
     
+# nativeToLE : slicearray version
 template nativeToLE*[T: BigUint, N: static int](input, output: slicearray[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToLE(input[i], output[i])
 
+# nativeToLE : ptr array version
 template nativeToLE*[T: BigUint, N: static int](input: ptr array[N, T], output: ptr array[N, T]): void {.autoSizeOpt.} =
   unroll(i, 0, N - 1):
     nativeToLE(input[i], output[i])
 
+# nativeToLE : ptr UncheckedArray version
 template nativeToLE*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: int): void {.autoSizeOpt.} =
   for i in 0 ..< length:
     nativeToLE(input[i], output[i])
 
+# nativeToLE : ptr UncheckedArray and static length version
 template nativeToLE*[T: BigUint](input: ptr UncheckedArray[T], output: ptr UncheckedArray[T], length: static int): void {.autoSizeOpt.} =
   unroll(i, 0, length - 1):
     nativeToLE(input[i], output[i])
