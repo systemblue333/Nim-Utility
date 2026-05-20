@@ -1,32 +1,42 @@
-{.experimental: "strictNotNil".}
-
-import tables
 import ../math/bigint
-import ../codeutils/bits
-import ../codeutils/indexutils
-import strutils
-import algorithm
 import ../codeutils/errorutils
+import ../codeutils/autoopt
+import std/[math, algorithm]
+import ../codeutils/envconst
+import std/[monotimes, times]
 
+when Native and Unix and defined(securetype):
+  import ../codeutils/securetype
+  import ../codeutils/securestrutils
+
+# enum for DataformatError
+# this project use Result<T, E>, not options or exception
+# Result<T, E> logic is defined in erroutils
 type
   DataformatError* = enum
     WrongCharacters = 0
 
+# --- bin to BaseN Char array ---
+
+# bin to Hex Char encoding array
 const Hex*: array[16, char] = [
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
   'A', 'B', 'C', 'D', 'E', 'F'
 ]
 
+# bin to Oct Char encoding array
 const Oct*: array[8, char] = [
   '0', '1', '2', '3', '4', '5', '6', '7'
 ]
 
+# bin to Base32 Char encoding array
 const Base32*: array[32, char] = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
   'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
   'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
   'Y', 'Z', '2', '3', '4', '5', '6', '7']
 
+# bin to Base36 Char encoding array
 const Base36*: array[36, char] = [
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
@@ -34,6 +44,7 @@ const Base36*: array[36, char] = [
   'U', 'V', 'W', 'X', 'Y', 'Z'
 ]
 
+# bin to Base45 Char encoding array
 const Base45*: array[45, char] = [
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
@@ -42,6 +53,7 @@ const Base45*: array[45, char] = [
   '+', '-', '.', '/', ':'
 ]
 
+# bin to Base56 Char encoding array
 const Base56*: array[56, char] = [
   '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 
   'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 
@@ -51,6 +63,7 @@ const Base56*: array[56, char] = [
   'u', 'v', 'w', 'x', 'y', 'z'
 ]
 
+# bin to Base58 Char encoding array
 const Base58*: array[58, char] = [
   '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 
   'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 
@@ -60,6 +73,7 @@ const Base58*: array[58, char] = [
   's', 't', 'u', 'v', 'w', 'x', 'y', 'z'
 ]
 
+# bin to Base62 Char encoding array
 const Base62*: array[62, char] = [
   '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
@@ -70,6 +84,7 @@ const Base62*: array[62, char] = [
   'y', 'z'
 ]
 
+# bin to Base64 Char encoding array
 const Base64*: array[64, char] = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 
   'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 
@@ -80,6 +95,7 @@ const Base64*: array[64, char] = [
   '8', '9', '+', '/'
 ]
 
+# bin to Base85 Char encoding array
 const Base85*: array[85, char] = [
   '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', 
   '+', ',', '-', '.', '/', '0', '1', '2', '3', '4', 
@@ -92,6 +108,7 @@ const Base85*: array[85, char] = [
   'q', 'r', 's', 't', 'u'
 ]
 
+# bin to Base91 Char encoding array
 const Base91*: array[91, char] = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
   'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
@@ -105,6 +122,7 @@ const Base91*: array[91, char] = [
   '"'
 ]
 
+# bin to Base92 Char encoding array
 const Base92*: array[92, char] = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
   'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
@@ -118,1238 +136,1063 @@ const Base92*: array[92, char] = [
   '~', '"'
 ]
 
-let HexMap*: Table[char, uint8]= {
-  '0': 0'u8, '1': 1'u8, '2': 2'u8, '3': 3'u8, '4': 4'u8, '5': 5'u8, '6': 6'u8, '7': 7'u8, '8': 8'u8, '9': 9'u8,
-  'A': 10'u8, 'B': 11'u8, 'C': 12'u8, 'D': 13'u8, 'E': 14'u8, 'F': 15'u8
-}.toTable
+# --- BaseN Char To bin table ---
 
-let OctMap*: Table[char, uint8] = {
-  '0': 0'u8, '1': 1'u8, '2': 2'u8, '3': 3'u8, '4': 4'u8, '5': 5'u8, '6': 6'u8, '7': 7'u8
-}.toTable
+when not defined(noTable):
+  const HexMap: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Hex: res[uint8(ch)] = uint8(i)
+    res
+  const OctMap: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Oct: res[uint8(ch)] = uint8(i)
+    res
+  const Base32Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base32: res[uint8(ch)] = uint8(i)
+    res
+  const Base36Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base36: res[uint8(ch)] = uint8(i)
+    res
+  const Base45Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base45: res[uint8(ch)] = uint8(i)
+    res
+  const Base56Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base56: res[uint8(ch)] = uint8(i)
+    res
+  const Base58Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base58: res[uint8(ch)] = uint8(i)
+    res
+  const Base62Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base62: res[uint8(ch)] = uint8(i)
+    res
+  const Base64Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base64: res[uint8(ch)] = uint8(i)
+    res
+  const Base85Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base85: res[uint8(ch)] = uint8(i)
+    res
+  const Base91Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base91: res[uint8(ch)] = uint8(i)
+    res
+  const Base92Map: array[256, uint8] = block:
+    var res: array[256, uint8]
+    for i in 0..255: res[i] = 255'u8
+    for i, ch in Base92: res[uint8(ch)] = uint8(i)
+    res
 
-let Base32Map*: Table[char, uint8] = {
-  'A': 0'u8, 'B': 1'u8, 'C': 2'u8, 'D': 3'u8, 'E': 4'u8, 'F': 5'u8, 'G': 6'u8, 'H': 7'u8, 'I': 8'u8, 'J': 9'u8, 
-  'K': 10'u8, 'L': 11'u8, 'M': 12'u8, 'N': 13'u8, 'O': 14'u8, 'P': 15'u8, 'Q': 16'u8, 'R': 17'u8, 'S': 18'u8, 'T': 19'u8, 
-  'U': 20'u8, 'V': 21'u8, 'W': 22'u8, 'X': 23'u8, 'Y': 24'u8, 'Z': 25'u8, '2': 26'u8, '3': 27'u8, '4': 28'u8, '5': 29'u8, 
-  '6': 30'u8, '7': 31'u8
-}.toTable
+template ctInOpenRange(u, minVal, maxVal: uint8): uint8 =
+  let au = uint32(u)
+  let k1 = (au - uint32(minVal)) shr 31    
+  let k2 = (uint32(maxVal) - au) shr 31      
+  uint8(((k1 or k2) xor 1'u32) * 0xFF'u32)   
 
-let Base36Map*: Table[char, uint8] = {
-  '0': 0'u8,'1': 1'u8, '2': 2'u8, '3': 3'u8, '4': 4'u8, '5': 5'u8, '6': 6'u8, '7': 7'u8, '8': 8'u8, '9': 9'u8,
-  'A': 10'u8, 'B': 11'u8, 'C': 12'u8, 'D': 13'u8, 'E': 14'u8, 'F': 15'u8, 'G': 16'u8, 'H': 17'u8, 'I': 18'u8, 'J': 19'u8,
-  'K': 20'u8, 'L': 21'u8, 'M': 22'u8, 'N': 23'u8, 'O': 24'u8, 'P': 25'u8, 'Q': 26'u8, 'R': 27'u8, 'S': 28'u8, 'T': 29'u8,
-  'U': 30'u8, 'V': 31'u8, 'W': 32'u8, 'X': 33'u8, 'Y': 34'u8, 'Z': 35'u8
-}.toTable
+template ctEq(u, val: uint8): uint8 =
+  let diff = uint32(u) xor uint32(val)
+  uint8((((diff or (0'u32 - diff)) shr 31) xor 1'u32) * 0xFF'u32)
 
-let Base45Map*: Table[char, uint8] = {
-  '0': 0'u8, '1': 1'u8, '2': 2'u8, '3': 3'u8, '4': 4'u8, '5': 5'u8, '6': 6'u8, '7': 7'u8, '8': 8'u8, '9': 9'u8,
-  'A': 10'u8, 'B': 11'u8, 'C': 12'u8, 'D': 13'u8, 'E': 14'u8, 'F': 15'u8, 'G': 16'u8, 'H': 17'u8, 'I': 18'u8, 'J': 19'u8,
-  'K': 20'u8, 'L': 21'u8, 'M': 22'u8, 'N': 23'u8, 'O': 24'u8, 'P': 25'u8, 'Q': 26'u8, 'R': 27'u8, 'S': 28'u8, 'T': 29'u8,
-  'U': 30'u8, 'V': 31'u8, 'W': 32'u8, 'X': 33'u8, 'Y': 34'u8, 'Z': 35'u8, ' ': 36'u8, '$': 37'u8, '%': 38'u8, '*': 39'u8,
-  '+': 40'u8, '-': 41'u8, '.': 42'u8, '/': 43'u8, ':': 44'u8
-}.toTable
+# mapping logic
+template getHexVal(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 48'u8, 57'u8)  # '0'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 70'u8)  # 'A'-'F'
+    let m2 = ctInOpenRange(u, 97'u8, 102'u8) # 'a'-'f'
+    let validMask = m0 or m1 or m2
+    let val = (m0 and (u - 48'u8)) or (m1 and (u - 55'u8)) or (m2 and (u - 87'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    HexMap[uint8(c)]
 
-let Base56Map*: Table[char, uint8] = {
-  '2': 0'u8, '3': 1'u8, '4': 2'u8, '5': 3'u8, '6': 4'u8, '7': 5'u8, '8': 6'u8, '9': 7'u8, 'A': 8'u8, 'B': 9'u8, 
-  'C': 10'u8, 'D': 11'u8, 'E': 12'u8, 'F': 13'u8, 'G': 14'u8, 'H': 15'u8, 'J': 16'u8, 'K': 17'u8, 'L': 18'u8, 'M': 19'u8, 
-  'N': 20'u8, 'P': 21'u8, 'Q': 22'u8, 'R': 23'u8, 'S': 24'u8, 'T': 25'u8, 'U': 26'u8, 'V': 27'u8, 'W': 28'u8, 'X': 29'u8, 
-  'Y': 30'u8, 'Z': 31'u8, 'a': 32'u8, 'b': 33'u8, 'c': 34'u8, 'd': 35'u8, 'e': 36'u8, 'f': 37'u8, 'g': 38'u8, 'h': 39'u8, 
-  'i': 40'u8, 'j': 41'u8, 'k': 42'u8, 'm': 43'u8, 'n': 44'u8, 'p': 45'u8, 'q': 46'u8, 'r': 47'u8, 's': 48'u8, 't': 49'u8, 
-  'u': 50'u8, 'v': 51'u8, 'w': 52'u8, 'x': 53'u8, 'y': 54'u8, 'z': 55'u8
-}.toTable
+template getOctVal(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 48'u8, 55'u8)  # '0'-'7'
+    let val = m0 and (u - 48'u8)
+    val or (not m0)
+  else:
+    OctMap[uint8(c)]
 
-let Base58Map*: Table[char, uint8] = {
-  '1': 0'u8, '2': 1'u8, '3': 2'u8, '4': 3'u8, '5': 4'u8, '6': 5'u8, '7': 6'u8, '8': 7'u8, '9': 8'u8, 'A': 9'u8, 
-  'B': 10'u8, 'C': 11'u8, 'D': 12'u8, 'E': 13'u8, 'F': 14'u8, 'G': 15'u8, 'H': 16'u8, 'J': 17'u8, 'K': 18'u8, 'L': 19'u8, 
-  'M': 20'u8, 'N': 21'u8, 'P': 22'u8, 'Q': 23'u8, 'R': 24'u8, 'S': 25'u8, 'T': 26'u8, 'U': 27'u8, 'V': 28'u8, 'W': 29'u8, 
-  'X': 30'u8, 'Y': 31'u8, 'Z': 32'u8, 'a': 33'u8, 'b': 34'u8, 'c': 35'u8, 'd': 36'u8, 'e': 37'u8, 'f': 38'u8, 'g': 39'u8, 
-  'h': 40'u8, 'i': 41'u8, 'j': 42'u8, 'k': 43'u8, 'm': 44'u8, 'n': 45'u8, 'o': 46'u8, 'p': 47'u8, 'q': 48'u8, 'r': 49'u8, 
-  's': 50'u8, 't': 51'u8, 'u': 52'u8, 'v': 53'u8, 'w': 54'u8, 'x': 55'u8, 'y': 56'u8, 'z': 57'u8
-}.toTable
+template getBase32Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 65'u8, 90'u8)  # 'A'-'Z'
+    let m1 = ctInOpenRange(u, 50'u8, 55'u8)  # '2'-'7'
+    let validMask = m0 or m1
+    let val = (m0 and (u - 65'u8)) or (m1 and (u - 24'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base32Map[uint8(c)]
 
-let Base62Map*: Table[char, uint8] = {
-  '0': 0'u8, '1': 1'u8, '2': 2'u8, '3': 3'u8, '4': 4'u8, '5': 5'u8, '6': 6'u8, '7': 7'u8, '8': 8'u8, '9': 9'u8,
-  'A': 10'u8, 'B': 11'u8, 'C': 12'u8, 'D': 13'u8, 'E': 14'u8, 'F': 15'u8, 'G': 16'u8, 'H': 17'u8, 'I': 18'u8, 'J': 19'u8,
-  'K': 20'u8, 'L': 21'u8, 'M': 22'u8, 'N': 23'u8, 'O': 24'u8, 'P': 25'u8, 'Q': 26'u8, 'R': 27'u8, 'S': 28'u8, 'T': 29'u8,
-  'U': 30'u8, 'V': 31'u8, 'W': 32'u8, 'X': 33'u8, 'Y': 34'u8, 'Z': 35'u8, 'a': 36'u8, 'b': 37'u8, 'c': 38'u8, 'd': 39'u8,
-  'e': 40'u8, 'f': 41'u8, 'g': 42'u8, 'h': 43'u8, 'i': 44'u8, 'j': 45'u8, 'k': 46'u8, 'l': 47'u8, 'm': 48'u8, 'n': 49'u8,
-  'o': 50'u8, 'p': 51'u8, 'q': 52'u8, 'r': 53'u8, 's': 54'u8, 't': 55'u8, 'u': 56'u8, 'v': 57'u8, 'w': 58'u8, 'x': 59'u8,
-  'y': 60'u8, 'z': 61'u8
-}.toTable
+template getBase36Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 48'u8, 57'u8)  # '0'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 90'u8)  # 'A'-'Z'
+    let m2 = ctInOpenRange(u, 97'u8, 122'u8) # 'a'-'z'
+    let validMask = m0 or m1 or m2
+    let val = (m0 and (u - 48'u8)) or (m1 and (u - 55'u8)) or (m2 and (u - 87'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base36Map[uint8(c)]
 
-let Base64Map*: Table[char, uint8] = {
-  'A': 0'u8, 'B': 1'u8, 'C': 2'u8, 'D': 3'u8, 'E': 4'u8, 'F': 5'u8, 'G': 6'u8, 'H': 7'u8, 'I': 8'u8, 'J': 9'u8, 
-  'K': 10'u8, 'L': 11'u8, 'M': 12'u8, 'N': 13'u8, 'O': 14'u8, 'P': 15'u8, 'Q': 16'u8, 'R': 17'u8, 'S': 18'u8, 'T': 19'u8, 
-  'U': 20'u8, 'V': 21'u8, 'W': 22'u8, 'X': 23'u8, 'Y': 24'u8, 'Z': 25'u8, 'a': 26'u8, 'b': 27'u8, 'c': 28'u8, 'd': 29'u8, 
-  'e': 30'u8, 'f': 31'u8, 'g': 32'u8, 'h': 33'u8, 'i': 34'u8, 'j': 35'u8, 'k': 36'u8, 'l': 37'u8, 'm': 38'u8, 'n': 39'u8, 
-  'o': 40'u8, 'p': 41'u8, 'q': 42'u8, 'r': 43'u8, 's': 44'u8, 't': 45'u8, 'u': 46'u8, 'v': 47'u8, 'w': 48'u8, 'x': 49'u8, 
-  'y': 50'u8, 'z': 51'u8, '0': 52'u8, '1': 53'u8, '2': 54'u8, '3': 55'u8, '4': 56'u8, '5': 57'u8, '6': 58'u8, '7': 59'u8, 
-  '8': 60'u8, '9': 61'u8, '+': 62'u8, '/': 63'u8
-}.toTable
+template getBase45Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 48'u8, 57'u8)  # '0'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 90'u8)  # 'A'-'Z'
+    let s0 = ctEq(u, 32'u8)  # ' ' -> 36
+    let s1 = ctEq(u, 36'u8)  # '$' -> 37
+    let s2 = ctEq(u, 37'u8)  # '%' -> 38
+    let s3 = ctEq(u, 42'u8)  # '*' -> 39
+    let s4 = ctEq(u, 43'u8)  # '+' -> 40
+    let s5 = ctEq(u, 45'u8)  # '-' -> 41
+    let s6 = ctEq(u, 46'u8)  # '.' -> 42
+    let s7 = ctEq(u, 47'u8)  # '/' -> 43
+    let s8 = ctEq(u, 58'u8)  # ':' -> 44
+    let validMask = m0 or m1 or s0 or s1 or s2 or s3 or s4 or s5 or s6 or s7 or s8
+    let val = (m0 and (u - 48'u8)) or (m1 and (u - 55'u8)) or
+              (s0 and 36'u8) or (s1 and 37'u8) or (s2 and 38'u8) or (s3 and 39'u8) or
+              (s4 and 40'u8) or (s5 and 41'u8) or (s6 and 42'u8) or (s7 and 43'u8) or
+              (s8 and 44'u8)
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base45Map[uint8(c)]
 
-let Base85Map*: Table[char, uint8] = {
-  '!': 0'u8, '"': 1'u8, '#': 2'u8, '$': 3'u8, '%': 4'u8, '&': 5'u8, '\'': 6'u8, '(': 7'u8, ')': 8'u8, '*': 9'u8, 
-  '+': 10'u8, ',': 11'u8, '-': 12'u8, '.': 13'u8, '/': 14'u8, '0': 15'u8, '1': 16'u8, '2': 17'u8, '3': 18'u8, '4': 19'u8, 
-  '5': 20'u8, '6': 21'u8, '7': 22'u8, '8': 23'u8, '9': 24'u8, ':': 25'u8, ';': 26'u8, '<': 27'u8, '=': 28'u8, '>': 29'u8, 
-  '?': 30'u8, '@': 31'u8, 'A': 32'u8, 'B': 33'u8, 'C': 34'u8, 'D': 35'u8, 'E': 36'u8, 'F': 37'u8, 'G': 38'u8, 'H': 39'u8, 
-  'I': 40'u8, 'J': 41'u8, 'K': 42'u8, 'L': 43'u8, 'M': 44'u8, 'N': 45'u8, 'O': 46'u8, 'P': 47'u8, 'Q': 48'u8, 'R': 49'u8, 
-  'S': 50'u8, 'T': 51'u8, 'U': 52'u8, 'V': 53'u8, 'W': 54'u8, 'X': 55'u8, 'Y': 56'u8, 'Z': 57'u8, '[': 58'u8, '\\': 59'u8, 
-  ']': 60'u8, '^': 61'u8, '_': 62'u8, '`': 63'u8, 'a': 64'u8, 'b': 65'u8, 'c': 66'u8, 'd': 67'u8, 'e': 68'u8, 'f': 69'u8, 
-  'g': 70'u8, 'h': 71'u8, 'i': 72'u8, 'j': 73'u8, 'k': 74'u8, 'l': 75'u8, 'm': 76'u8, 'n': 77'u8, 'o': 78'u8, 'p': 79'u8, 
-  'q': 80'u8, 'r': 81'u8, 's': 82'u8, 't': 83'u8, 'u': 84'u8
-}.toTable
+template getBase56Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 50'u8, 57'u8)   # '2'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 72'u8)   # 'A'-'H'
+    let m2 = ctInOpenRange(u, 74'u8, 78'u8)   # 'J'-'N'
+    let m3 = ctInOpenRange(u, 80'u8, 90'u8)   # 'P'-'Z'
+    let m4 = ctInOpenRange(u, 97'u8, 107'u8)  # 'a'-'k'
+    let m5 = ctInOpenRange(u, 109'u8, 110'u8) # 'm'-'n'
+    let m6 = ctInOpenRange(u, 112'u8, 122'u8) # 'p'-'z'
+    let validMask = m0 or m1 or m2 or m3 or m4 or m5 or m6
+    let val = (m0 and (u - 50'u8)) or (m1 and (u - 57'u8)) or (m2 and (u - 58'u8)) or
+              (m3 and (u - 59'u8)) or (m4 and (u - 65'u8)) or (m5 and (u - 66'u8)) or
+              (m6 and (u - 67'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base56Map[uint8(c)]
 
-let Base91Map*: Table[char, uint8] = {
-  'A': 0'u8, 'B': 1'u8, 'C': 2'u8, 'D': 3'u8, 'E': 4'u8, 'F': 5'u8, 'G': 6'u8, 'H': 7'u8, 'I': 8'u8, 'J': 9'u8,
-  'K': 10'u8, 'L': 11'u8, 'M': 12'u8, 'N': 13'u8, 'O': 14'u8, 'P': 15'u8, 'Q': 16'u8, 'R': 17'u8, 'S': 18'u8, 'T': 19'u8,
-  'U': 20'u8, 'V': 21'u8, 'W': 22'u8, 'X': 23'u8, 'Y': 24'u8, 'Z': 25'u8, 'a': 26'u8, 'b': 27'u8, 'c': 28'u8, 'd': 29'u8,
-  'e': 30'u8, 'f': 31'u8, 'g': 32'u8, 'h': 33'u8, 'i': 34'u8, 'j': 35'u8, 'k': 36'u8, 'l': 37'u8, 'm': 38'u8, 'n': 39'u8,
-  'o': 40'u8, 'p': 41'u8, 'q': 42'u8, 'r': 43'u8, 's': 44'u8, 't': 45'u8, 'u': 46'u8, 'v': 47'u8, 'w': 48'u8, 'x': 49'u8,
-  'y': 50'u8, 'z': 51'u8, '0': 52'u8, '1': 53'u8, '2': 54'u8, '3': 55'u8, '4': 56'u8, '5': 57'u8, '6': 58'u8, '7': 59'u8,
-  '8': 60'u8, '9': 61'u8, '!': 62'u8, '#': 63'u8, '$': 64'u8, '%': 65'u8, '&': 66'u8, '(': 67'u8, ')': 68'u8, '*': 69'u8,
-  '+': 70'u8, ',': 71'u8, '.': 72'u8, '/': 73'u8, ':': 74'u8, ';': 75'u8, '<': 76'u8, '=': 77'u8, '>': 78'u8, '?': 79'u8,
-  '@': 80'u8, '[': 81'u8, ']': 82'u8, '^': 83'u8, '_': 84'u8, '`': 85'u8, '{': 86'u8, '|': 87'u8, '}': 88'u8, '~': 89'u8,
-  '"': 90'u8
-}.toTable
+template getBase58Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 49'u8, 57'u8)   # '1'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 72'u8)   # 'A'-'H'
+    let m2 = ctInOpenRange(u, 74'u8, 78'u8)   # 'J'-'N'
+    let m3 = ctInOpenRange(u, 80'u8, 90'u8)   # 'P'-'Z'
+    let m4 = ctInOpenRange(u, 97'u8, 107'u8)  # 'a'-'k'
+    let m5 = ctInOpenRange(u, 109'u8, 111'u8) # 'm'-'o'
+    let m6 = ctInOpenRange(u, 112'u8, 122'u8) # 'p'-'z'
+    let validMask = m0 or m1 or m2 or m3 or m4 or m5 or m6
+    let val = (m0 and (u - 49'u8)) or (m1 and (u - 56'u8)) or (m2 and (u - 57'u8)) or
+              (m3 and (u - 58'u8)) or (m4 and (u - 64'u8)) or (m5 and (u - 65'u8)) or
+              (m6 and (u - 66'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base58Map[uint8(c)]
 
-let Base92Map*: Table[char, uint8] = {
-  'A': 0'u8, 'B': 1'u8, 'C': 2'u8, 'D': 3'u8, 'E': 4'u8, 'F': 5'u8, 'G': 6'u8, 'H': 7'u8, 'I': 8'u8, 'J': 9'u8,
-  'K': 10'u8, 'L': 11'u8, 'M': 12'u8, 'N': 13'u8, 'O': 14'u8, 'P': 15'u8, 'Q': 16'u8, 'R': 17'u8, 'S': 18'u8, 'T': 19'u8,
-  'U': 20'u8, 'V': 21'u8, 'W': 22'u8, 'X': 23'u8, 'Y': 24'u8, 'Z': 25'u8, 'a': 26'u8, 'b': 27'u8, 'c': 28'u8, 'd': 29'u8,
-  'e': 30'u8, 'f': 31'u8, 'g': 32'u8, 'h': 33'u8, 'i': 34'u8, 'j': 35'u8, 'k': 36'u8, 'l': 37'u8, 'm': 38'u8, 'n': 39'u8,
-  'o': 40'u8, 'p': 41'u8, 'q': 42'u8, 'r': 43'u8, 's': 44'u8, 't': 45'u8, 'u': 46'u8, 'v': 47'u8, 'w': 48'u8, 'x': 49'u8,
-  'y': 50'u8, 'z': 51'u8, '0': 52'u8, '1': 53'u8, '2': 54'u8, '3': 55'u8, '4': 56'u8, '5': 57'u8, '6': 58'u8, '7': 59'u8,
-  '8': 60'u8, '9': 61'u8, '!': 62'u8, '#': 63'u8, '$': 64'u8, '%': 65'u8, '&': 66'u8, '(': 67'u8, ')': 68'u8, '*': 69'u8,
-  '+': 70'u8, ',': 71'u8, '-': 72'u8, '.': 73'u8, '/': 74'u8, ':': 75'u8, ';': 76'u8, '<': 77'u8, '=': 78'u8, '>': 79'u8,
-  '?': 80'u8, '@': 81'u8, '[': 82'u8, ']': 83'u8, '^': 84'u8, '_': 85'u8, '`': 86'u8, '{': 87'u8, '|': 88'u8, '}': 89'u8,
-  '~': 90'u8, '"': 91'u8
-}.toTable
+template getBase62Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 48'u8, 57'u8)  # '0'-'9'
+    let m1 = ctInOpenRange(u, 65'u8, 90'u8)  # 'A'-'Z'
+    let m2 = ctInOpenRange(u, 97'u8, 122'u8) # 'a'-'z'
+    let validMask = m0 or m1 or m2
+    let val = (m0 and (u - 48'u8)) or (m1 and (u - 55'u8)) or (m2 and (u - 61'u8))
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base62Map[uint8(c)]
 
-template charToBinC(input: lent openArray[char]): seq[uint8] =
-  var output: seq[uint8]
+template getBase64Val*(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 65'u8, 90'u8)  
+    let m1 = ctInOpenRange(u, 97'u8, 122'u8) 
+    let m2 = ctInOpenRange(u, 48'u8, 57'u8) 
+    let s0 = ctEq(u, 43'u8) 
+    let s1 = ctEq(u, 47'u8) 
+    let pad = ctEq(u, 61'u8)
+    
+    let validMask = m0 or m1 or m2 or s0 or s1 or pad
+    
+    let v0 = m0 and uint8((uint32(u) - 65'u32) and 0xFF'u32)
+    let v1 = m1 and uint8((uint32(u) - 71'u32) and 0xFF'u32)
+    let v2 = m2 and uint8((uint32(u) + 4'u32) and 0xFF'u32)
+    let v3 = s0 and 62'u8
+    let v4 = s1 and 63'u8
+    
+    # 패딩 문자(=)는 마스크는 통과하지만 실제 누적 값은 0으로 처리됨
+    (v0 or v1 or v2 or v3 or v4) or (not validMask and 0xFF'u8)
+  else:
+    Base64Map[uint8(c)]
+
+template getBase85Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 33'u8, 117'u8) # '!' to 'u'
+    let val = m0 and (u - 33'u8)
+    val or (not m0 and 0xFF'u8)
+  else:
+    Base85Map[uint8(c)]
+
+template getBase91Val(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    let m0 = ctInOpenRange(u, 65'u8, 90'u8)   # A-Z
+    let m1 = ctInOpenRange(u, 97'u8, 122'u8)  # a-z
+    let m2 = ctInOpenRange(u, 48'u8, 57'u8)   # 0-9
+    let s0 = ctEq(u, 33'u8) or ctInOpenRange(u, 35'u8, 38'u8) or ctInOpenRange(u, 40'u8, 44'u8) or
+             ctInOpenRange(u, 46'u8, 47'u8) or ctInOpenRange(u, 58'u8, 64'u8)
+    let s1 = ctInOpenRange(u, 91'u8, 91'u8) or ctInOpenRange(u, 93'u8, 96'u8) or ctInOpenRange(u, 123'u8, 126'u8)
+    let s2 = ctEq(u, 34'u8)
+    let validMask = m0 or m1 or m2 or s0 or s1 or s2
+    let val = (m0 and (u - 65'u8)) or (m1 and (u - 71'u8)) or (m2 and (u + 4'u8)) or
+              (s0 and (u - 33'u8 + 62'u8)) or
+              (s1 and (u - 91'u8 + 81'u8)) or
+              (s2 and 90'u8)
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base91Map[uint8(c)]
+
+template getBase92Val*(c: char): uint8 {.autoSizeOpt.} =
+  when defined(noTable):
+    let u = uint8(c)
+    
+    # 1. 큰 덩어리 범위 처리
+    let m0 = ctInOpenRange(u, 65'u8, 90'u8)   # 'A'..'Z' -> 0..25
+    let m1 = ctInOpenRange(u, 97'u8, 122'u8)  # 'a'..'z' -> 26..51
+    let m2 = ctInOpenRange(u, 48'u8, 57'u8)   # '0'..'9' -> 52..61
+    
+    let s00 = ctEq(u, 33'u8)   # '!' -> 62
+    let s01 = ctEq(u, 35'u8)   # '#' -> 63
+    let s02 = ctEq(u, 36'u8)   # '$' -> 64
+    let s03 = ctEq(u, 37'u8)   # '%' -> 65
+    let s04 = ctEq(u, 38'u8)   # '&' -> 66
+    let s05 = ctEq(u, 40'u8)   # '(' -> 67
+    let s06 = ctEq(u, 41'u8)   # ')' -> 68
+    let s07 = ctEq(u, 42'u8)   # '*' -> 69
+    let s08 = ctEq(u, 43'u8)   # '+' -> 70
+    let s09 = ctEq(u, 44'u8)   # ',' -> 71
+    let s10 = ctEq(u, 45'u8)   # '-' -> 72
+    let s11 = ctEq(u, 46'u8)   # '.' -> 73
+    let s12 = ctEq(u, 47'u8)   # '/' -> 74
+    let s13 = ctEq(u, 58'u8)   # ':' -> 75
+    let s14 = ctEq(u, 59'u8)   # ';' -> 76
+    let s15 = ctEq(u, 60'u8)   # '<' -> 77
+    let s16 = ctEq(u, 61'u8)   # '=' -> 78
+    let s17 = ctEq(u, 62'u8)   # '>' -> 79
+    let s18 = ctEq(u, 63'u8)   # '?' -> 80
+    let s19 = ctEq(u, 64'u8)   # '@' -> 81
+    let s20 = ctEq(u, 91'u8)   # '[' -> 82
+    let s21 = ctEq(u, 93'u8)   # ']' -> 83
+    let s22 = ctEq(u, 94'u8)   # '^' -> 84
+    let s23 = ctEq(u, 95'u8)   # '_' -> 85
+    let s24 = ctEq(u, 96'u8)   # '`' -> 86
+    let s25 = ctEq(u, 123'u8)  # '{' -> 87
+    let s26 = ctEq(u, 124'u8)  # '|' -> 88
+    let s27 = ctEq(u, 125'u8)  # '}' -> 89
+    let s28 = ctEq(u, 126'u8)  # '~' -> 90
+    let s29 = ctEq(u, 34'u8)   # '"' -> 91
+
+    let validMask = m0 or m1 or m2 or 
+                    s00 or s01 or s02 or s03 or s04 or s05 or s06 or s07 or s08 or s09 or
+                    s10 or s11 or s12 or s13 or s14 or s15 or s16 or s17 or s18 or s19 or
+                    s20 or s21 or s22 or s23 or s24 or s25 or s26 or s27 or s28 or s29
+    
+    let val = (m0 and (u - 65'u8)) or 
+              (m1 and (u - 71'u8)) or 
+              (m2 and (u + 4'u8)) or
+              (s00 and 62'u8) or (s01 and 63'u8) or (s02 and 64'u8) or (s03 and 65'u8) or
+              (s04 and 66'u8) or (s05 and 67'u8) or (s06 and 68'u8) or (s07 and 69'u8) or
+              (s08 and 70'u8) or (s09 and 71'u8) or (s10 and 72'u8) or (s11 and 73'u8) or
+              (s12 and 74'u8) or (s13 and 75'u8) or (s14 and 76'u8) or (s15 and 77'u8) or
+              (s16 and 78'u8) or (s17 and 79'u8) or (s18 and 80'u8) or (s19 and 81'u8) or
+              (s20 and 82'u8) or (s21 and 83'u8) or (s22 and 84'u8) or (s23 and 85'u8) or
+              (s24 and 86'u8) or (s25 and 87'u8) or (s26 and 88'u8) or (s27 and 89'u8) or
+              (s28 and 90'u8) or (s29 and 91'u8)
+              
+    val or (not validMask and 0xFF'u8)
+  else:
+    Base92Map[uint8(c)]
+
+# charToBin logic
+proc charToBin*(input: openArray[char]): seq[uint8] {.autoTemplateOpt.} =
+  var output: seq[uint8] = newSeq[uint8](input.len)
+  var i: int = 0
   for c in input:
-    output.add(c.uint8)
+    output[i] = c.uint8
+    i += 1
 
   output
 
-template hexToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
+# hexToBin logic
+proc hexToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  # define output first
+  var output: Result[seq[uint8], DataformatError]
 
+  # check input's char is correct
   var isValid: bool = true
   for c in input:
-    if c notin Hex:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+    if getHexVal(c) == 255'u8:
+      output = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
       isValid = false
       break
 
   if isValid:
+    # calculate output length
     let outLen: int = (input.len + 1) div 2
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
 
+    # initialize output
+    output = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
+
+    # logic of hex to bin decoding
     let fullPairs = input.len div 2
     for i in 0 ..< fullPairs:
-      var hi: uint8 = HexMap[input[2 * i]]
-      var lo: uint8 = HexMap[input[2 * i + 1]]
-      result.value[i] = (hi shl 4) or lo
+      var hi: uint8 = getHexVal(input[2 * i])
+      var lo: uint8 = getHexVal(input[2 * i + 1])
+      output.value[i] = (hi shl 4) or lo
 
+    # remain decoding
     if input.len mod 2 == 1:
-      var hi: uint8 = HexMap[input[^1]]
-      result.value[^1] = (hi shl 4)
+      var hi: uint8 = getHexVal(input[^1])
+      output.value[^1] = (hi shl 4)
 
-  result
+  # returning
+  output
 
-template binToHexC(input: lent openArray[uint8]): string =
-  var output: string
+# binToHex logic
+proc binToHex*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  # define and initialize output first
+  # pre-initializing length is because of performance
+  # add makes seq to resize and copy
+  var output: string = newString(input.len * 2)
+
+  # logic of bin to hex encoding
+  var i: int = 0
   for bytes in input:
     let hi = (bytes shr 4) and 0xF
     let lo = bytes and 0xF
-    output.add(char(hi + (if hi < 10: ord('0') else: ord('A') - 10)))
-    output.add(char(lo + (if lo < 10: ord('0') else: ord('A') - 10)))
+    output[i] = (char(hi + (if hi < 10: ord('0') else: ord('A') - 10)))
+    output[i + 1] = (char(lo + (if lo < 10: ord('0') else: ord('A') - 10)))
+    i += 2
 
+  # returning
   output
 
-template octToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
+# general baseNToBin translating logic for bits-baseN
+template toBinGeneric(input: openArray[char], bitsPerChar: static int, valGetter: untyped): Result[seq[uint8], DataformatError] =
+  # define output first
+  var output: Result[seq[uint8], DataformatError]
 
-  var isValid: bool = true
+  # check input's char is correct
+  var isValid = true
   for c in input:
-    if c notin Oct:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+    if valGetter(c) == 255'u8:
       isValid = false
       break
 
-  if isValid:
-    let totalBits: int = input.len * 3
+  if not isValid:
+    # return Failure and error
+    output = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+  else:
+    # calculate output length
+    let totalBits: int = input.len * bitsPerChar
+
+    # initialize output
+    # pre-initializing length is because of performance
+    # add makes seq to resize and copy
     let outLen: int = (totalBits + 7) div 8
+    output = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
 
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
-
-    var buffer: uint32 = 0'u32
+    # set temporary variables
+    var buffer: uint32 = 0
     var bits: int = 0
-    var outIdx: int = 0
+    var outIndex: int = 0
 
+    # logic of baseN to bin decoding
     for c in input:
-      var val: uint8 = OctMap[c]
-      buffer = (buffer shl 3) or val.uint32
-      bits += 3
+      var val: uint32 = valGetter(c).uint32
+      buffer = (buffer shl bitsPerChar) or val
+      bits += bitsPerChar
 
       if bits >= 8:
         let shift: int = bits - 8
-        result.value[outIdx] = uint8((buffer shr shift) and 0xFF'u32)
-        outIdx.inc
+        output.value[outIndex] = uint8((buffer shr shift) and 0xFF'u32)
+        outIndex.inc
         bits = shift
         buffer = buffer and ((1'u32 shl bits) - 1)
 
+    # remain decoding
     if bits > 0:
-      result.value[outIdx] = uint8((buffer shl (8 - bits) and 0xFF'u32))
+      output.value[outIndex] = uint8((buffer shl (8 - bits)) and 0xFF'u32)
 
-  result
+  # returning
+  output
 
-template binToOctC(input: lent openArray[uint8]): string =
-  var output: string
-  var buffer = 0'u32
-  var bits = 0
+# general binToBaseN translating logic for bits-baseN
+template fromBinGeneric(input: openArray[uint8], bitsPerChar: static int, charTable: untyped): string =
+  # calculating output length
+  let totalInputBits = input.len * 8
+  let outLen = (totalInputBits + bitsPerChar - 1) div bitsPerChar
 
-  for bytes in input:
-    buffer = (buffer shl 8) or bytes.uint32
+  # initializing output
+  var output: string = newString(outLen)
+
+  # set temporary variable and runtime constant
+  var buffer: uint32 = 0
+  var bits: int = 0
+  let mask: int = int(1'u32 shl bitsPerChar) - 1
+  var outIndex: int = 0
+
+  # logic of bin to baseN encoding
+  for b in input:
+    buffer = (buffer shl 8) or b.uint32
     bits += 8
-
-    while bits >= 3:
-      let index = (buffer shr (bits - 3)) and 0x07
-      output.add(Oct[index])
-      bits -= 3
-
+    while bits >= bitsPerChar:
+      var index: uint32 = (buffer shr (bits - bitsPerChar)) and mask.uint32
+      output[outIndex] = charTable[index]
+      bits -= bitsPerChar
+      outIndex.inc
     buffer = buffer and ((1'u32 shl bits) - 1)
 
+  # remain encoding
   if bits > 0:
-    let index = (buffer shl (3 - bits)) and 0x07
-    output.add(Oct[index])
-  output
-
-template base32ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base32:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-
-  if isValid:
-    let totalBits: int = input.len * 5
-    let outLen: int = (totalBits + 7) div 8
-
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
-
-    var buffer: uint32 = 0'u32
-    var bits: int = 0
-    var outIdx: int = 0
-
-    for c in input:
-      let val: uint8 = Base32Map[c]
-      buffer = (buffer shl 5) or val.uint32
-      bits += 5
-
-      if bits >= 8:
-        let shift: int = bits - 8
-
-        result.value[outIdx] = uint8((buffer shr shift) and 0xFF'u32)
-        outIdx.inc
-        bits = shift
-
-        buffer = buffer and ((1'u32 shl bits) - 1)
-
-    if bits > 0:
-      result.value[outIdx] = uint8((buffer shl (8 - bits) and 0xFF'u32))
-
-  result
-
-template binToBase32C(input: lent openArray[uint8]): string =
-  var output: string
-  var buffer = 0'u32
-  var bits = 0
-
-  for bytes in input:
-    buffer = (buffer shl 8) or bytes.uint32
-    bits += 8
-
-    while bits >= 5:
-      let index = (buffer shr (bits - 5)) and 0x1F
-      output.add(Base32[index])
-      bits -= 5
-
-    buffer = buffer and ((1'u32 shl bits) - 1)
-
-  if bits > 0:
-    let index = (buffer shl (5 - bits)) and 0x1F
-    output.add(Base32[index])
-
-  output
-
-template base64ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base64:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-
-  if isValid:
-    let totalBits: int = input.len * 6
-    let outLen = (totalBits + 7) div 8
-
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](outLen))
-
-    var buffer: uint32 = 0'u32
-    var bits: int = 0
-    var outIdx: int = 0
-
-    for c in input:
-      var val: uint8 = Base64Map[c]
-      buffer = (buffer shl 6) or val.uint32
-      bits += 6
-
-      if bits >= 8:
-        let shift: int = bits - 8
-        result.value[outIdx] = uint8((buffer shr shift) and 0xFF'u32)
-        outIdx.inc
-        bits = shift
-        buffer = buffer and ((1'u32 shl bits) - 1)
-
-    if bits > 0:
-      result.value[outIdx] = uint8((buffer shl (8 - bits) and 0xFF'u32))
-
-  result
-
-template binToBase64C(input: lent openArray[uint8]): string =
-  var output: string
-  var bitBuffer: uint32 = 0
-  var bitCount = 0
-
-  for bytes in input:
-    bitBuffer = (bitBuffer shl 8) or uint32(bytes)
-    bitCount += 8
-
-    while bitCount >= 6:
-      let index = (bitBuffer shr (bitCount - 6)) and 0x3F
-      output.add(Base64[index])
-      bitCount -= 6
-
-  if bitCount > 0:
-    let index = (bitBuffer shl (6 - bitCount)) and 0x3F
-    output.add(Base64[index])
-
-  output
-
-template base36ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(36'u32)
+    if outIndex < outLen:
+      var index: uint32 = (buffer shl (bitsPerChar - bits)) and mask.uint32
+      output[outIndex] = charTable[index]
+    else:
+      var index: uint32 = (buffer shl (bitsPerChar - bits)) and mask.uint32
+      output.add(charTable[index])
   
-  var isValid: bool = true
+  if outIndex < outLen:
+    output.setLen(outIndex)
+
+  # returning
+  output
+
+# general baseNtoBin deocding logic for non-bits baseN
+template toBinBigIntGeneric(input: openArray[char], baseValue: static int, valGetter: untyped): Result[seq[uint8], DataformatError] =
+  var output: Result[seq[uint8], DataformatError]
+  var isValid = true
+
+  var zeroCount = 0
   for c in input:
-    if c notin Base36:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+    let v = valGetter(c) and 0xFF'u8
+    if v == 255'u8:
       isValid = false
       break
-    var cBigInt: BigInt = initBigInt(uint32(Base36Map[c]))
-    temp = temp * constant + cBigInt
+    if v == 0'u8:
+      zeroCount.inc
+    else:
+      break
 
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
+  for c in input:
+    if (valGetter(c) and 0xFF'u8) == 255'u8:
+      isValid = false
+      break
 
-  result
-
-template binToBase36C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(36'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
+  if not isValid:
+    output = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
   else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base36[toInt(r)])
-      temp = q
+    var temp = initBigInt(0'u32)
+    let constant = initBigInt(baseValue.uint32)
 
-    reverse(output)
+    for c in input:
+      let v = valGetter(c) and 0xFF'u8
+      temp = temp * constant + initBigInt(v.uint32)
+
+    if temp.isZero:
+      output = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](zeroCount))
+    else:
+      let logRatio = ln(baseValue.float) / ln(256.0)
+      let maxLen = ceil(input.len.float * logRatio).int + zeroCount + 2
+      
+      var buffer = newSeq[uint8](maxLen)
+      var outIndex = maxLen - 1 
+      
+      let byteMax = initBigInt(256'u32)
+      var zero = initBigInt(0'u32)
+
+      while temp > zero:
+        let (q, r) = divMod(temp, byteMax)
+        buffer[outIndex] = uint8(r.value[0] and 0xFF'u32)
+        outIndex.dec
+        temp = q
+
+      for i in 0 ..< zeroCount:
+        buffer[outIndex] = 0'u8
+        outIndex.dec
+
+      let startPos = outIndex + 1
+      let actualLen = maxLen - startPos
+      
+      var finalBytes = newSeq[uint8](actualLen)
+      for i in 0 ..< actualLen:
+        finalBytes[i] = buffer[startPos + i]
+
+      output = Result[seq[uint8], DataformatError](kind: Success, value: finalBytes)
 
   output
 
-template base45ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(45'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base45:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base45Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase45C(input: openArray[uint8]): string =
-  var output: string
+# general binToBaseN translating logic for non-bits baseN
+template fromBinBigIntGeneric(input: openArray[uint8], baseValue: static int, charTable: untyped): string =
   var zero: BigInt = initBigInt(0'u32)
   var temp: BigInt = zero
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-  let constant: BigInt = initBigInt(45'u32)
+  let constant: BigInt = initBigInt(baseValue.uint32)
   let byteMax: BigInt = initBigInt(256'u32)
 
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
+  var zeroCount = 0
+  for b in input:
+    if b == 0'u8: zeroCount.inc
+    else: break
 
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
+  for b in input:
+    temp = temp * byteMax + initBigInt(b.uint32)
 
   if temp == zero:
-    output = "0"
+    var output = newString(zeroCount)
+    for i in 0 ..< zeroCount:
+      output[i] = charTable[0]
+    output
   else:
+    let logRatio = ln(256.0) / ln(baseValue.float)
+    let maxLen = ceil(input.len.float * logRatio).int + zeroCount + 2
+    
+    var buffer = newString(maxLen)
+    var outIndex = maxLen - 1 
+
     while temp > zero:
       let (q, r) = divmod(temp, constant)
-      output.add(Base45[toInt(r)])
+      buffer[outIndex] = charTable[toInt(r)]
+      outIndex.dec
       temp = q
 
+    for i in 0 ..< zeroCount:
+      buffer[outIndex] = charTable[0]
+      outIndex.dec
+
+    let startPosition = outIndex + 1
+    let actualLen = maxLen - startPosition
+
+    var finalString: string = newString(actualLen)
+    copyMem(addr finalString[0], addr buffer[startPosition], actualLen)
+
+    finalString
+
+when Native and Unix and defined(securetype):
+  # secured version of charToBin logic
+  proc charToBinS*(input: openArray[char]): SecureSeq[uint8] {.autoTemplateOpt.} =
+    var output: SecureSeq[uint8] = newSecureSeq[uint8](input.len)
+    var i: int = 0
+    for c in input:
+      output[i] = c.uint8
+      i += 1
+
+    output
+
+  # secured version of hexToBin logic
+  proc hexToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    # define output first
+    var output: Result[SecureSeq[uint8], DataformatError]
+
+    # check input's char is correct
+    var isValid: bool = true
+    for c in input:
+      if getHexVal(c) == 255'u8:
+        output = Result[SecureSeq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+        isValid = false
+        break
+
+    if isValid:
+      # calculate output length
+      let outLen: int = (input.len + 1) div 2
+
+      # initialize output
+      # pre-initializing length is because of performance
+      # add makes seq to resize and copy
+      output = Result[SecureSeq[uint8], DataformatError](kind: Success, value: newSecureSeq[uint8](outLen))
+
+      # logic of hex to bin decoding
+      let fullPairs = input.len div 2
+      for i in 0 ..< fullPairs:
+        var hi: uint8 = getHexVal(input[2 * i])
+        var lo: uint8 = getHexVal(input[2 * i + 1])
+        output.value[i] = (hi shl 4) or lo
+
+      # remain decoding
+      if input.len mod 2 == 1:
+        var hi: uint8 = getHexVal(input[^1])
+        output.value[^1] = (hi shl 4)
+
+    # returning
+    output
+
+  # secured version of binToHex logic
+  proc binToHexS*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    # define and initialize output first
+    # pre-initializing length is because of performance
+    # add makes seq to resize and copy
+    var output: SecureString = newSecureString(input.len * 2)
+
+    # logic of bin to hex encoding
+    var i: int = 0
+    for bytes in input:
+      let hi = (bytes shr 4) and 0xF
+      let lo = bytes and 0xF
+      output[i] = (char(hi + (if hi < 10: ord('0') else: ord('A') - 10)))
+      output[i + 1] = (char(lo + (if lo < 10: ord('0') else: ord('A') - 10)))
+      i += 2
+
+    # returning
+    output
+
+  # secured version of general baseNToBin translating logic for bits-baseN
+  template toBinGenericS(input: lent openArray[char], bitsPerChar: static int, valGetter: untyped): Result[SecureSeq[uint8], DataformatError] =
+    # define output first
+    var output: Result[SecureSeq[uint8], DataformatError]
+
+    # check input's char is correct
+    var isValid = true
+    for c in input:
+      if valGetter(c) == 255'u8:
+        isValid = false
+        break
+
+    if not isValid:
+      # return Failure and error
+      output = Result[SecureSeq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
+    else:
+      # calculate output length
+      let totalBits: int = input.len * bitsPerChar
+      let outLen: int = (totalBits + 7) div 8
+
+      # initialize output
+      # pre-initialize length is because of performance
+      # add makes seq to resize and copy
+      output = Result[SecureSeq[uint8], DataformatError](kind: Success, value: newSecureSeq[uint8](outLen))
+
+      # set temporary variables
+      var buffer: uint32 = 0
+      var bits: int = 0
+      var outIndex: int = 0
+
+      # logic of baseN to bin decoding
+      for c in input:
+        var val: uint32 = valGetter(c).uint32
+        buffer = (buffer shl bitsPerChar) or val
+        bits += bitsPerChar
+
+        if bits >= 8:
+          let shift: int = bits - 8
+          output.value[outIndex] = uint8((buffer shr shift) and 0xFF'u32)
+          outIndex.inc
+          bits = shift
+          buffer = buffer and ((1'u32 shl bits) - 1)
+
+      # remain decoding
+      if bits > 0:
+        output.value[outIndex] = uint8((buffer shl (8 - bits)) and 0xFF'u32)
+
+    # returning output
+    output
+
+  # secured version of general binToBaseN translating logic for bits-baseN
+  template fromBinGenericS(input: lent openArray[uint8], bitsPerChar: static int, charTable: untyped): SecureString =
+    # calculate output length
+    let totalInputBits = input.len * 8
+    let outLen = (totalInputBits + bitsPerChar - 1) div bitsPerChar
+
+    # initializing output
+    var output: SecureString = newSecureString(outLen)
+
+    # set temporary variable and runtime constant
+    var buffer: uint32 = 0
+    var bits: int = 0
+    let mask: int = int(1'u32 shl bitsPerChar) - 1
+    var outIndex: int = 0
+
+    # logic of bin to baseN encoding
+    for b in input:
+      buffer = (buffer shl 8) or b.uint32
+      bits += 8
+      while bits >= bitsPerChar:
+        var index: uint32 = (buffer shr (bits - bitsPerChar)) and mask.uint32
+        output[outIndex] = charTable[index]
+        bits -= bitsPerChar
+      buffer = buffer and ((1'u32 shl bits) - 1)
+
+    # remain encoding
+    if bits > 0:
+      if outIndex < outLen:
+        var index: uint32 = (buffer shl (bitsPerChar - bits)) and mask.uint32
+        output[outIndex] = charTable[index]
+      else:
+        var index: uint32 = (buffer shl (bitsPerChar - bits)) and mask.uint32
+        output.add(charTable[index])
+
+    output
+
+  # secured version of general decoding for non-bits base N
+  template toBinBigIntGenericS(input: lent openArray[char], baseValue: static int, valGetter: untyped): Result[SecureSeq[uint8], DataformatError] =
+    # pre-declaring ouptut
+    var output: Result[SecureSeq[uint8], DataformatError]
+
+    # set temporary variables and constant
+    var isValid: bool = true
+    var temp: BigInt = initBigInt(0'u32)
+    let constant: BigInt = initBigInt(baseValue.uint32)
+
+    # check input's char is correct and add char's value to temp
+    for c in input:
+      if valGetter(c) == 255'u8:
+        isValid = false
+        break
+      let cBigInt = initBigInt(uint32(valGetter(c)))
+      temp = temp * constant + cBigInt
+
+    if not isValid:
+      # return Failure and error
+      output = Result[SecureSeq[uint8], DataFormatError](kind: Failure, error: WrongCharacters)
+    else:
+      # calculate output length
+      let totalBytes = temp.value.len * 4
+
+      # initialize output
+      output = Result[SecureSeq[uint8], DataformatError](kind: Success, value: newSecureSeq[uint8](totalBYtes))
+
+      # logic of base N to bin decoding
+      for i in 0 ..< temp.value.len:
+        let limb = temp.value[i]
+        let baseIndex = (temp.value.len - 1 - i) * 4
+        output.value[baseIndex + 0] = uint8((limb shr 24) and 0xFF'u32)
+        output.value[baseIndex + 1] = uint8((limb shr 16) and 0xFF'u32)
+        output.value[baseIndex + 2] = uint8((limb shr 8) and 0xFF'u32)
+        output.value[baseIndex + 3] = uint8(limb and 0xFF'u32)
+
+    # returning
+    output
+
+  # secured version of general binToBaseN translating logic for non-bits baseN
+  template fromBinBigIntGenericS(input: lent openArray[uint8], baseValue: static int, charTable: untyped): SecureString =
+    # declaring ouptut
+    var output: SecureString
+
+    # set temporary variables and constant
+    var zero: BigInt = initBigInt(0'u32)
+    var temp: BigInt = zero
+    let constant: BigInt = initBigInt(baseValue.uint32)
+    let byteMax: BigInt = initBigInt(256'u32)
+    let wordMax: BigInt = initBigInt(1'u64 shl 32)
+
+    # logic of bin to base N encoding
+    var i: int = 0
+    while i <= input.len - 4:
+      let chunk: uint32 = (input[i].uint32 shl 24) or (input[i + 1].uint32 shl 16) or
+      (input[i + 2].uint32 shl 8) or input[i + 3].uint32
+      temp = temp * wordMax + initBigInt(chunk)
+      i += 4
+
+    while i < input.len:
+      temp = temp * byteMax + initBigInt(input[i].uint32)
+      i.inc
+
+    if temp == zero:
+      var res = newSecureString(1)
+      res[0] = '0'
+      res.length = 1
+      output = res
+    else:
+      let logRatio: float = ln(256.0) / ln(baseValue.float)
+      let predictedLen: int = ceil(input.len.float * logRatio).int
+
+      output = newSecureString(predictedLen)
+      var outIndex: int = 0
+
+      while temp > zero:
+        let (q, r) = divmod(temp, constant)
+        output[outIndex] = charTable[toInt(r)]
+        outIndex.inc
+        temp = q
+      
+      output.length = outIndex
+
+    # returning
     reverse(output)
-
-  output
-
-template base56ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(56'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base56:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base56Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase56C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(56'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base56[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-template base58ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(58'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base58:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base58Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase58C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(58'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base58[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-template base62ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(62'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base62:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base62Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase62C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(62'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base62[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-template base85ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(85'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base85:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base85Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase85C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(85'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base85[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-template base91ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(91'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base91:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base91Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase91C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(91'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base91[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-template base92ToBinC(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-  var result: Result[seq[uint8], DataformatError]
-  var temp: BigInt = initBigInt(0'u32)
-  let constant: BigInt = initBigInt(92'u32)
-
-  var isValid: bool = true
-  for c in input:
-    if c notin Base92:
-      result = Result[seq[uint8], DataformatError](kind: Failure, error: WrongCharacters)
-      isValid = false
-      break
-    var cBigInt: BigInt = initBigInt(uint32(Base92Map[c]))
-    temp = temp * constant + cBigInt
-
-  if isValid:
-    let totalBytes: int = temp.limbs.len * 4
-    result = Result[seq[uint8], DataformatError](kind: Success, value: newSeq[uint8](totalBytes))
-    for i in 0 ..< temp.limbs.len:
-      var limb: uint32 = temp.limbs[i]
-      let baseIdx: int = (temp.limbs.len - 1 - i) * 4
-      result.value[baseIdx + 0] = uint8((limb shr 24) and 0xFF'u32)
-      result.value[baseIdx + 1] = uint8((limb shr 16) and 0xFF'u32)
-      result.value[baseIdx + 2] = uint8((limb shr 8) and 0xFF'u32)
-      result.value[baseIdx + 3] = uint8(limb and 0xFF'u32)
-
-  result
-
-template binToBase92C(input: lent openArray[uint8]): string =
-  var output: string
-  var zero: BigInt = initBigInt(0'u32)
-  var temp: BigInt = zero
-  let byteMax: BigInt = initBigInt(256'u32)
-  let constant: BigInt = initBigInt(92'u32)
-  let wordMax: BigInt = initBigInt(1'u64 shl 32)
-
-  var i = 0
-  while i <= input.len - 4:
-    var chunk = (input[i].uint32 shl 24) or
-    (input[i + 1].uint32 shl 16) or
-    (input[i + 2].uint32 shl 8) or
-    input[i + 3].uint32
-    temp = temp * wordMax + initBigInt(chunk)
-    i += 4
-
-  while i < input.len:
-    temp = temp * byteMax + initBigInt(input[i].uint32)
-    i.inc
-
-  if temp == zero:
-    output = "0"
-  else:
-    while temp > zero:
-      let (q, r) = divmod(temp, constant)
-      output.add(Base92[toInt(r)])
-      temp = q
-
-    reverse(output)
-
-  output
-
-when defined(templateOpt):
-  when defined(varOpt):
-    template charToBin*(input: lent openArray[char], output: var seq[uint8]): void =
-      output = charToBinC(input)
-    template hexToBin*(input: lent openArray[char], output: var seq[uint8]): void =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = hexToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToHex*(input: lent openArray[uint8], output: var string): void =
-      output = binToHexC(input)
-    template octToBin*(input: lent openArray[char], output: var seq[uint8]): void =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = octToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToOct*(input: lent openArray[uint8], output: var string): void =
-      output = binToOctC(input)
-    template base32ToBin*(input: lent openArray[char], output: var seq[uint8]): void =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base32ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase32*(input: lent openArray[uint8], output: var string): void = 
-      output = binToBase32C(input) 
-    template base64ToBin*(input: lent openArray[char], output: var seq[uint8]): void =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base64ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase64*(input: lent openArray[uint8], output: var string): void = 
-      output = binToBase64C(input)
-    template base36ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base36ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase36*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase36C(input)
-    template base45ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base45ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase45*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase45C(input)
-    template base56ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base56ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase56*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase56C(input)
-    template base58ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base58ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase58*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase58C(input)
-    template base62ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base62ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase62*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase62C(input)
-    template base85ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base85ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase85*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase85C(input)
-    template base91ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base91ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase91*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase91C(input)
-    template base92ToBin*(input: lent openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var result: Result[void, DataformatError]
-      var temp: Result[seq[uint8], DataformatError] = base92ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-      of Failure:
-        result.kind = Failure
-        result.error = temp.error
-      result
-    template binToBase92*(input: lent openArray[uint8], output: var string): void =
-      output = binToBase92C(input)
-  else:
-    template charToBin*(input: lent openArray[char]): seq[uint8] =
-      charToBinC(input)
-    template hexTobBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = hexToBinC(input)
-      result
-    template binToHex*(input: lent openArray[uint8]): string =
-      var result: string = binToHexC(input)
-      result
-    template octToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = octToBinC(input)
-      result
-    template binToOct*(input: lent openArray[uint8]): string =
-      var result: string = binToOctC(input)
-      result
-    template base32ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base32ToBinC(input)
-      result 
-    template binToBase32*(input: lent openArray[uint8]): string = 
-      var result: string = binToBase32C(input) 
-      result 
-    template base64ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base64ToBinC(input)
-      result 
-    template binToBase64*(input: lent openArray[uint8]): string = 
-      var result: string = binToBase64C(input) 
-      result
-    template base36ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base36ToBinC(input)
-      result
-    template binToBase36*(input: lent openArray[uint8]): string =
-      var result: string = binToBase36C(input)
-      result
-    template base45ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base45ToBinC(input)
-      result
-    template binToBase45*(input: lent openArray[uint8]): string =
-      var result: string = binToBase45C(input)
-      result
-    template base56ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base56ToBinC(input)
-      result
-    template binToBase56*(input: lent openArray[uint8]): string =
-      var result: string = binToBase56C(input)
-      result
-    template base58ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base58ToBinC(input)
-      result
-    template binToBase58*(input: lent openArray[uint8]): string =
-      var result: string = binToBase58C(input)
-      result
-    template base62ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base62ToBinC(input)
-      result
-    template binToBase62*(input: lent openArray[uint8]): string =
-      var result: string = binToBase62C(input)
-      result
-    template base85ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base85ToBinC(input)
-      result
-    template binToBase85*(input: lent openArray[uint8]): string =
-      var result: string = binToBase85C(input)
-      result
-    template base91ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base91ToBinC(input)
-      result
-    template binToBase91*(input: lent openArray[uint8]): string =
-      var result: string = binToBase91C(input)
-      result
-    template base92ToBin*(input: lent openArray[char]): Result[seq[uint8], DataformatError] =
-      var result: Result[seq[uint8], DataformatError] = base92ToBinC(input)
-      result
-    template binToBase92*(input: lent openArray[uint8]): string =
-      var result: string = binToBase92C(input)
-      result
-else:
-  when defined(varOpt):
-    proc charToBin*(input: openArray[char], output: var seq[uint8]): void =
-      output = charToBinC(input)
-    proc hexToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = hexToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToHex*(input: openArray[uint8], output: var string) =
-      output = binToHexC(input)
-    proc octToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = octToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToOct*(input: openArray[uint8], output: var string) =
-      output = binToOctC(input)
-    proc base32ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base32ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase32*(input: openArray[uint8], output: var string) =
-      output = binToBase32C(input)
-    proc base64ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base64ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase64*(input: openArray[uint8], output: var string) =
-      output = binToBase64C(input)
-    proc base36ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base36ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase36*(input: openArray[uint8], output: var string) =
-      output = binToBase36C(input)
-    proc base45ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base45ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase45*(input: openArray[uint8], output: var string) =
-      output = binToBase45C(input)
-    proc base56ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base56ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase56*(input: openArray[uint8], output: var string) =
-      output = binToBase56C(input)
-    proc base58ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base58ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase58*(input: openArray[uint8], output: var string) =
-      output = binToBase58C(input)
-    proc base62ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base62ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase62*(input: openArray[uint8], output: var string) =
-      output = binToBase62C(input)
-    proc base85ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base85ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase85*(input: openArray[uint8], output: var string) =
-      output = binToBase85C(input)
-    proc base91ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base91ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase91*(input: openArray[uint8], output: var string) =
-      output = binToBase91C(input)
-    proc base92ToBin*(input: openArray[char], output: var seq[uint8]): Result[void, DataformatError] =
-      var temp = base92ToBinC(input)
-      case temp.kind
-      of Success:
-        output = temp.value
-        return Result[void, DataformatError](kind: Success)
-      of Failure:
-        return Result[void, DataformatError](kind: Failure, error: temp.error)
-    proc binToBase92*(input: openArray[uint8], output: var string) =
-      output = binToBase92C(input)
-  else:
-    proc charToBin*(input: openArray[char]): seq[uint8] =
-      return charToBinC(input)
-    proc hexToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return hexToBinC(input)
-    proc binToHex*(input: openArray[uint8]): string =
-      return binToHexC(input)
-    proc octToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return octToBinC(input)
-    proc binToOct*(input: openArray[uint8]): string =
-      return binToOctC(input)
-    proc base32ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base32ToBinC(input)
-    proc binToBase32*(input: openArray[uint8]): string =
-      return binToBase32C(input)
-    proc base64ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base64ToBinC(input)
-    proc binToBase64*(input: openArray[uint8]): string =
-      return binToBase64C(input)
-    proc base36ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base36ToBinC(input)
-    proc binToBase36*(input: openArray[uint8]): string =
-      return binToBase36C(input)
-    proc base45ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base45ToBinC(input)
-    proc binToBase45*(input: openArray[uint8]): string =
-      return binToBase45C(input)
-    proc base56ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base56ToBinC(input)
-    proc binToBase56*(input: openArray[uint8]): string =
-      return binToBase56C(input)
-    proc base58ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base58ToBinC(input)
-    proc binToBase58*(input: openArray[uint8]): string =
-      return binToBase58C(input)
-    proc base62ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base62ToBinC(input)
-    proc binToBase62*(input: openArray[uint8]): string =
-      return binToBase62C(input)
-    proc base85ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base85ToBinC(input)
-    proc binToBase85*(input: openArray[uint8]): string =
-      return binToBase85C(input)
-    proc base91ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base91ToBinC(input)
-    proc binToBase91*(input: openArray[uint8]): string =
-      return binToBase91C(input)
-    proc base92ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] =
-      return base92ToBinC(input)
-    proc binToBase92*(input: openArray[uint8]): string =
-      return binToBase92C(input)
-
-#[
-var a: string = "1398BDKEKDI398"
-var b: Result[seq[uint8], DataformatError] = base36ToBin(a)
-if b.kind == Success:
-  echo binToBase36(b.value)
-  echo binToHex(b.value)
-else:
-  case b.error
-  of WrongCharacters:
-    echo "Invalid Characters"
-
-var c: string = "ADDE39C03"
-var d: Result[seq[uint8], DataformatError] = hexToBin(c)
-if d.kind == Success:
-  echo binToHex(d.value)
-else:
-  case d.error
-  of WrongCharacters:
-    echo "Invalid Characters"
-
-var e: string = "aEkbi32+/38A0"
-var f: Result[seq[uint8], DataformatError] = base64ToBin(e)
-if f.kind == Success:
-  echo binToHex(f.value)
-  echo binToBase64(f.value)
-else:
-  case f.error
-  of WrongCharacters:
-    echo "Invalid Characters"
-]#
+    output
+
+# Octal (3-bit)
+proc octToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinGeneric(input, 3, getOctVal)
+proc binToOct*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinGeneric(input, 3, Oct)
+
+# Base32 (5-bit)
+proc base32ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinGeneric(input, 5, getBase32Val)
+proc binToBase32*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinGeneric(input, 5, Base32)
+
+# Base64 (6-bit)
+proc base64ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinGeneric(input, 6, getBase64Val)
+proc binToBase64*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinGeneric(input, 6, Base64)
+
+when Native and Unix and defined(securetype):
+  proc octToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinGenericS(input, 3, getOctVal)
+  proc binToOctS*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinGenericS(input, 3, Oct)
+  proc base32ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinGenericS(input, 5, getBase32Val)
+  proc binToBase32S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinGenericS(input, 5, Base32)
+  proc base64ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinGenericS(input, 6, getBase64Val)
+  proc binToBase64S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinGenericS(input, 6, Base64)
+
+# base36
+proc base36ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 36, getBase36Val)
+proc binToBase36*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 36, Base36)
+
+# base45
+proc base45ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 45, getBase45Val)
+proc binToBase45*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 45, Base45)
+
+# base56
+proc base56ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 56, getBase56Val)
+proc binToBase56*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 56, Base56)
+
+# base58
+proc base58ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 58, getBase58Val)
+proc binToBase58*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 58, Base58)
+
+# base62
+proc base62ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 62, getBase62Val)
+proc binToBase62*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 62, Base62)
+
+# base85
+proc base85ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 85, getBase85Val)
+proc binToBase85*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 85, Base85)
+
+# base91
+proc base91ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 91, getBase91Val)
+proc binToBase91*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 91, Base91)
+
+# base92
+proc base92ToBin*(input: openArray[char]): Result[seq[uint8], DataformatError] {.autoTemplateOpt.} =
+  toBinBigIntGeneric(input, 92, getBase92Val)
+proc binToBase92*(input: openArray[uint8]): string {.autoTemplateOpt.} =
+  fromBinBigIntGeneric(input, 92, Base92)
+
+when Native and Unix and defined(securetype):
+  # secured versions
+  proc base36ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 36, getBase36Val)
+  proc binToBase36S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 36, Base36)
+  proc base45ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 45, getBase45Val)
+  proc binToBase45S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 45, Base45)
+  proc base56ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 56, getBase56Val)
+  proc binToBase56S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 56, Base56)
+  proc base58ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 58, getBase58Val)
+  proc binToBase58S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 58, Base58)
+  proc base62ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 62, getBase62Val)
+  proc binToBase62S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 62, Base62)
+  proc base85ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 85, getBase85Val)
+  proc binToBase85S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 85, Base85)
+  proc base91ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 91, getBase91Val)
+  proc binToBase91S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 91, Base91)
+  proc base92ToBinS*(input: openArray[char]): Result[SecureSeq[uint8], DataformatError] {.autoTemplateOpt.} =
+    toBinBigIntGenericS(input, 92, getBase92Val)
+  proc binToBase92S*(input: openArray[uint8]): SecureString {.autoTemplateOpt.} =
+    fromBinBigIntGenericS(input, 92, Base92)
+
+when defined(test):
+  template benchmark(name: string, code: untyped) =
+    let start = getMonoTime()
+    code
+    let elapsed = getMonoTime() - start
+    echo name, " took: ", elapsed.inMicroseconds, " μs (", elapsed.inNanoseconds, " ns)"
+
+  block:
+    var hexInput = "1F877C5BE43C90F22902E4FE8ED2D3"
+    echo "Hex Standard : ", hexInput
+    var binRes = hexToBin(hexInput).value
+    echo "Hex Result : ", binToHex(binRes)
+    
+    benchmark("hexToBin & binToHex"):
+      for i in 1 .. 100_000:
+        var b = hexToBin(hexInput).value
+        discard binToHex(b)
+
+  block:
+    var octInput = "176037"
+    echo "Oct Standard : ", octInput
+    var binRes = octToBin(octInput).value
+    echo "Oct Result : ", binToOct(binRes)
+
+    benchmark("octToBin & binToOct"):
+      for i in 1 .. 100_000:
+        var b = octToBin(octInput).value
+        discard binToOct(b)
+
+  block:
+    var b32Input = "MY2DMMRQ"
+    echo "Base32 Standard : ", b32Input
+    var binRes = base32ToBin(b32Input).value
+    echo "Base32 Result : ", binToBase32(binRes)
+
+    benchmark("base32ToBin & binToBase32"):
+      for i in 1 .. 100_000:
+        var b = base32ToBin(b32Input).value
+        discard binToBase32(b)
+
+  block:
+    var b36Input = "ABCXYZ123"
+    echo "Base36 Standard : ", b36Input
+    var binRes = base36ToBin(b36Input).value
+    echo "Base36 Result : ", binToBase36(binRes)
+
+    benchmark("base36ToBin & binToBase36"):
+      for i in 1 .. 100_000:
+        var b = base36ToBin(b36Input).value
+        discard binToBase36(b)
+
+  block:
+    var b45Input = "6DVD63D"
+    echo "Base45 Standard : ", b45Input
+    var binRes = base45ToBin(b45Input).value
+    echo "Base45 Result : ", binToBase45(binRes)
+
+    benchmark("base45ToBin & binToBase45"):
+      for i in 1 .. 100_000:
+        var b = base45ToBin(b45Input).value
+        discard binToBase45(b)
+
+  block:
+    var b56Input = "A2B3C4D5"
+    echo "Base56 Standard : ", b56Input
+    var binRes = base56ToBin(b56Input).value
+    echo "Base56 Result : ", binToBase56(binRes)
+
+    benchmark("base56ToBin & binToBase56"):
+      for i in 1 .. 100_000:
+        var b = base56ToBin(b56Input).value
+        discard binToBase56(b)
+
+  block:
+    var b58Input = "123456789ABCDEF"
+    echo "Base58 Standard : ", b58Input
+    var binRes = base58ToBin(b58Input).value
+    echo "Base58 Result : ", binToBase58(binRes)
+
+    benchmark("base58ToBin & binToBase58"):
+      for i in 1 .. 100_000:
+        var b = base58ToBin(b58Input).value
+        discard binToBase58(b)
+
+  block:
+    var b62Input = "abcXYZ123"
+    echo "Base62 Standard : ", b62Input
+    var binRes = base62ToBin(b62Input).value
+    echo "Base62 Result : ", binToBase62(binRes)
+
+    benchmark("base62ToBin & binToBase62"):
+      for i in 1 .. 100_000:
+        var b = base62ToBin(b62Input).value
+        discard binToBase62(b)
+
+  block:
+    var b64Input = "SGVsbG8gV29ybGQ="
+    echo "Base64 Standard : ", b64Input
+    var binRes = base64ToBin(b64Input).value
+    echo "Base64 Result : ", binToBase64(binRes)
+
+    benchmark("base64ToBin & binToBase64"):
+      for i in 1 .. 100_000:
+        var b = base64ToBin(b64Input).value
+        discard binToBase64(b)
+
+  block:
+    var b85Input = "HelloWorld"
+    echo "Base85 Standard : ", b85Input
+    var binRes = base85ToBin(b85Input).value
+    echo "Base85 Result : ", binToBase85(binRes)
+
+    benchmark("base85ToBin & binToBase85"):
+      for i in 1 .. 100_000:
+        var b = base85ToBin(b85Input).value
+        discard binToBase85(b)
+
+  block:
+    var b91Input = "vL6HeX"
+    echo "Base91 Standard : ", b91Input
+    var binRes = base91ToBin(b91Input).value
+    echo "Base91 Result : ", binToBase91(binRes)
+
+    benchmark("base91ToBin & binToBase91"):
+      for i in 1 .. 100_000:
+        var b = base91ToBin(b91Input).value
+        discard binToBase91(b)
+
+  block:
+    var b92Input = "A~B_C"
+    echo "Base92 Standard : ", b92Input
+    var binRes = base92ToBin(b92Input).value
+    echo "Base92 Result : ", binToBase92(binRes)
+
+    benchmark("base92ToBin & binToBase92"):
+      for i in 1 .. 100_000:
+        var b = base92ToBin(b92Input).value
+        discard binToBase92(b)
